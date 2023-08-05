@@ -2,7 +2,7 @@ import json
 import os
 import re
 import subprocess
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, List, Mapping
 
 import dotbot
 
@@ -38,13 +38,11 @@ class Pipx(dotbot.Plugin):
                 "stdin": False,
                 "stderr": False,
                 "stdout": False,
-                "force_intel": False,
             },
             "pipxfile": {
                 "stdin": True,
                 "stderr": True,
                 "stdout": True,
-                "force_intel": False,
             },
         }
         super().__init__(*args, **kwargs)
@@ -89,28 +87,46 @@ class Pipx(dotbot.Plugin):
                 result = False
 
         if result:
-            self._log.info("All brew packages have been installed")
+            self._log.info("All pipx packages have been installed")
 
         return result
 
     def _pipxfile(self, pipx_files: list, defaults: Mapping[str, Any]) -> bool:
+        errors: List[str] = []
         result: bool = True
 
         for file in pipx_files:
-            self._log.info(f"Installing from file {file}")
-            with open(file, "r") as f:
+            self._log.info(f"Installing pipx packages from file {file}")
+            file_path = os.path.join(self._context.base_directory(), file)
+            with open(file_path, "r") as f:
                 pipxfile = json.load(f)
 
-            for package, package_info in pipxfile["venvs"].items():
-                version = package_info["metadata"]["main_package"][
-                    "package_version"
+            for pkg in pipxfile["venvs"].values():
+                pkg_info = pkg.metadata.main_package
+                pkg_name = pkg_info["package_or_url"]
+                pkg_version = pkg_info["package_version"]
+                package = f"{pkg_name}=={pkg_version}"
+                with_deps = pkg_info["include_dependencies"]
+                pip_args = pkg_info["pip_args"]
+                self._log.info(f"Installing {package}")
+                cmd = [
+                    self._pipx_exec,
+                    "install",
+                    f"'{package}'",
                 ]
-                pip_args = package_info["metadata"]["main_package"]["pip_args"]
-                cmd = f"pipx install '{package}=={version}' {pip_args}"
+                if with_deps:
+                    cmd += ["--include-deps"]
+                if pip_args:
+                    cmd += pip_args
 
-            if 0 != self._invoke_shell_command(cmd, defaults):
-                self._log.warning(f"Failed to install file [{file}]")
-                result = False
+                if 0 != self._invoke_shell_command(" ".join(cmd), defaults):
+                    errors.append(package)
+                else:
+                    self._log.info(f"Installed {package}")
+
+        if errors:
+            self._log.warning(f"Failed to install: {', '.join(errors)}")
+            result = False
 
         return result
 

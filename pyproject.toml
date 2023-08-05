@@ -10,7 +10,7 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [tool.pdm.dev-dependencies]
-dev = ["dotbot>=1.19.2", "black>=23.7.0", "ipython>=8.12.2", "isort>=5.12.0"]
+dev = ["dotbot>=1.19.2"]
 
 [tool.isort]
 profile = "black"
@@ -39,4 +39,5 @@ disable = [
     "invalid-name",
     "line-too-long",
     "unspecified-encoding",
+    "too-many-locals"
 ]
