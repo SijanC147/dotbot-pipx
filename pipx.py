@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import subprocess
@@ -97,7 +98,15 @@ class Pipx(dotbot.Plugin):
 
         for file in pipx_files:
             self._log.info(f"Installing from file {file}")
-            cmd = f"brew bundle --verbose --file={file}"
+            with open(file, "r") as f:
+                pipxfile = json.load(f)
+
+            for package, package_info in pipxfile["venvs"].items():
+                version = package_info["metadata"]["main_package"][
+                    "package_version"
+                ]
+                pip_args = package_info["metadata"]["main_package"]["pip_args"]
+                cmd = f"pipx install '{package}=={version}' {pip_args}"
 
             if 0 != self._invoke_shell_command(cmd, defaults):
                 self._log.warning(f"Failed to install file [{file}]")
