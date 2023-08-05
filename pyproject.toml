@@ -1,0 +1,27 @@
+[project]
+name = "dotbot-pipx"
+dynamic = ["version"]
+urls = { "Source" = "https://github.com/sijanc147/dotbot-pipx", "Bug Tracker" = "https://github.com/sijanc147/dotbot-pipx/issues" }
+description = "Dotbot plugin to install pipx packages"
+
+[tool.pdm.dev-dependencies]
+dev = ["dotbot>=1.19.2"]
+
+[tool.pylint."messages control"]
+disable = [
+    "raw-checker-failed",
+    "bad-inline-option",
+    "locally-disabled",
+    "file-ignored",
+    "suppressed-message",
+    "useless-suppression",
+    "deprecated-pragma",
+    "use-symbolic-message-instead",
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "missing-final-newline",
+    "invalid-name",
+    "line-too-long",
+    "unspecified-encoding",
+]
