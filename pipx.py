@@ -2,9 +2,22 @@ import json
 import os
 import re
 import subprocess
-from typing import Any, Callable, Iterable, List, Mapping
+from typing import Any, Callable, Iterable, List, Mapping, TypedDict, Union
 
 import dotbot
+
+
+class PipxFileDict(TypedDict):
+    path: str
+
+
+class OptionalPipxFileDict(PipxFileDict, total=False):
+    force: Union[bool, List[str]]
+    lock: Union[bool, List[str]]
+    upgrade: Union[bool, List[str]]
+
+
+PipxFile = Union[str, OptionalPipxFileDict]
 
 
 def which(program):
@@ -26,9 +39,10 @@ def which(program):
 class Pipx(dotbot.Plugin):
     _directives: Mapping[str, Callable] = {}
     _defaults: Mapping[str, Any] = {}
-    _pipx_exec = which("pipx")
+    _pipx_exec: str | None = None
 
     def __init__(self, *args, **kwargs) -> None:
+        self._pipx_exec = which("pipx")
         self._directives = {
             "pipx": self._pipx,
             "pipxfile": self._pipxfile,
@@ -56,22 +70,6 @@ class Pipx(dotbot.Plugin):
         defaults = {**local_defaults, **user_defaults}
         return self._directives[directive](data, defaults)
 
-    # def handle(self, directive, data):
-    #     if not self.can_handle(directive):
-    #         raise ValueError(
-    #             f"Can not handle directive {directive} or pipx is not installed."
-    #         )
-    #     success = True
-    #     for pkg_info in data:
-    #         data = self._apply_defaults(pkg_info)
-
-    #         success &= self._handle_single_package(data) == 0
-    #     if not success:
-    #         self._log.warning("Not all packages installed.")
-    #     else:
-    #         self._log.info("Finished installing pipx packages")
-    #     return success
-
     def _pipx(self, packages: list, defaults: Mapping[str, Any]) -> bool:
         result: bool = True
 
@@ -91,35 +89,85 @@ class Pipx(dotbot.Plugin):
 
         return result
 
-    def _pipxfile(self, pipx_files: list, defaults: Mapping[str, Any]) -> bool:
+    def _pipxfile(
+        self, pipx_files: List[PipxFile], defaults: Mapping[str, Any]
+    ) -> bool:
         errors: List[str] = []
         result: bool = True
 
-        for file in pipx_files:
+        for pipx_file in pipx_files:
+            if isinstance(pipx_file, str):
+                file = pipx_file
+                force = lock = upgrade = False
+            elif isinstance(pipx_file, dict):
+                file = pipx_file["path"]
+                force = pipx_file.get("force", False)
+                lock = pipx_file.get("lock", False)
+                upgrade = pipx_file.get("upgrade", False)
+            else:
+                self._log.error(f"Invalid pipxfile: {pipx_file}")
+                result = False
+                continue
+
+            if lock is True and upgrade is True:
+                self._log.error(
+                    "Cannot lock and upgrade packages at the same time"
+                )
+                result = False
+                continue
+
             self._log.info(f"Installing pipx packages from file {file}")
             file_path = os.path.join(self._context.base_directory(), file)
             with open(file_path, "r") as f:
                 pipxfile = json.load(f)
 
             for pkg in pipxfile["venvs"].values():
-                pkg_info = pkg.metadata.main_package
-                pkg_name = pkg_info["package_or_url"]
+                pkg_info = pkg["metadata"]["main_package"]
+                package = pkg_info["package_or_url"]
+                pkg_name = pkg_info["package"]
                 pkg_version = pkg_info["package_version"]
-                package = f"{pkg_name}=={pkg_version}"
+
+                if isinstance(force, list):
+                    force_pkg = pkg_name in force
+                else:
+                    force_pkg = force
+                if isinstance(upgrade, list):
+                    upgrade_pkg = pkg_name in upgrade
+                else:
+                    upgrade_pkg = upgrade
+                if isinstance(lock, list):
+                    lock_pkg = pkg_name in lock
+                else:
+                    lock_pkg = lock
+
+                if lock_pkg is True and upgrade_pkg is True:
+                    self._log.error(
+                        f"Cannot lock and upgrade {package} at the same time"
+                    )
+                    errors.append(package)
+                    continue
+
+                if lock_pkg and not package.endswith(pkg_version):
+                    package = f"{package}=={pkg_version}"
                 with_deps = pkg_info["include_dependencies"]
                 pip_args = pkg_info["pip_args"]
                 self._log.info(f"Installing {package}")
-                cmd = [
-                    self._pipx_exec,
-                    "install",
-                    f"'{package}'",
-                ]
+                cmd = [self._pipx_exec, f"'{package}'"]
+
+                if force_pkg:
+                    cmd += ["--force"]
                 if with_deps:
                     cmd += ["--include-deps"]
                 if pip_args:
-                    cmd += pip_args
+                    cmd += ["--pip-args"] + pip_args
 
-                if 0 != self._invoke_shell_command(" ".join(cmd), defaults):
+                if upgrade_pkg:
+                    upgrade_cmd = " ".join(cmd[:1] + ["upgrade"] + cmd[1:])
+                    if 0 == self._invoke_shell_command(upgrade_cmd, defaults):
+                        self._log.info(f"Upgraded {package}")
+                        continue
+                install_cmd = " ".join(cmd[:1] + ["install"] + cmd[1:])
+                if 0 != self._invoke_shell_command(install_cmd, defaults):
                     errors.append(package)
                 else:
                     self._log.info(f"Installed {package}")
@@ -179,40 +227,3 @@ class Pipx(dotbot.Plugin):
                 self._log.warning(f"Failed to install [{pkg}]")
 
             return 0 == result
-
-    # def _handle_single_package(self, data):
-    #     package = data.get("package", "")
-    #     if not package:
-    #         return 0
-    #     with open(os.devnull, "w") as devnull:
-    #         stdin = None if data.get("stdin", False) else devnull
-    #         stdout = None if data.get("stdout", False) else devnull
-    #         stderr = None if data.get("stderr", False) else devnull
-
-    #         flags = data.get("flags", [])
-
-    #         cmd = [self._pipx_exec, "install"] + flags + [package]
-    #         self._log.warning(f'Running command: {" ".join(cmd)}')
-    #         ret = subprocess.call(
-    #             cmd,
-    #             shell=False,
-    #             stdout=stdout,
-    #             stderr=stderr,
-    #             stdin=stdin,
-    #             cwd=self._context.base_directory(),
-    #         )
-    #         return ret
-
-    # def _apply_defaults(self, data):
-    #     defaults = self._context.defaults().get("pipx", {})
-    #     base = {
-    #         key: defaults.get(key, value)
-    #         for key, value in self._default_values.items()
-    #     }
-
-    #     if isinstance(data, dict):
-    #         base.update(data)
-    #     else:
-    #         base.update({"package": data})
-
-    #     return base

@@ -10,7 +10,7 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [tool.pdm.dev-dependencies]
-dev = ["dotbot>=1.19.2"]
+dev = ["dotbot>=1.19.2", "debugpy>=1.6.7"]
 
 [tool.isort]
 profile = "black"
@@ -39,5 +39,20 @@ disable = [
     "invalid-name",
     "line-too-long",
     "unspecified-encoding",
-    "too-many-locals"
+    "too-many-locals",
+    "too-many-branches",
+    "too-many-statements",
+]
+
+[tool.pdm.scripts]
+test.cmd = [
+    "python",
+    "-m",
+    "dotbot",
+    "--only",
+    "{args:pipxfile}",
+    "-p",
+    "pipx.py",
+    "-c",
+    "example.conf.yml",
 ]
